@@ -1,0 +1,29 @@
+[tools]
+go = "1.25"
+
+[tasks.fmt]
+description = "Format Go source files"
+run = "gofmt -w ."
+
+[tasks.lint]
+description = "Run go vet on the module"
+run = "go vet ./..."
+
+[tasks.golangci-lint]
+description = "Run golangci-lint (falls back to go vet if not installed)"
+run = """
+if command -v golangci-lint >/dev/null 2>&1; then
+  golangci-lint run ./...
+else
+  echo "golangci-lint not installed; running go vet instead"
+  go vet ./...
+fi
+"""
+
+[tasks.run]
+description = "Build and run the smtp-testing-go tool"
+run = "go run ."
+
+[tasks.build]
+description = "Build the smtp-testing-go binary"
+run = "go build -o smtp-testing-go ."
