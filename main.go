@@ -1,11 +1,114 @@
 package main
 
-import("crypto/tls";"flag";"fmt";"net";"net/smtp";"os";"strings";"time")
-type list []string
-func(l *list)String()string{return strings.Join(*l,",")}
-func(l *list)Set(v string)error{*l=append(*l,v);return nil}
-type cfg struct{server,from,to,subject,body,helo,user,pass,auth string;headers list;starttls,tls,insecure,verbose bool;timeout time.Duration}
-func main(){var c cfg;flag.StringVar(&c.server,"server","","serveur SMTP host:port");flag.StringVar(&c.from,"from","","MAIL FROM");flag.StringVar(&c.to,"to","","destinataires séparés par des virgules");flag.StringVar(&c.subject,"subject","SMTP test","objet");flag.StringVar(&c.body,"body","SMTP test message","corps");flag.Var(&c.headers,"header","en-tête Name: value");flag.StringVar(&c.helo,"helo","localhost","nom EHLO");flag.BoolVar(&c.starttls,"starttls",false,"activer STARTTLS");flag.BoolVar(&c.tls,"tls",false,"TLS direct");flag.BoolVar(&c.insecure,"insecure",false,"ignorer les certificats");flag.StringVar(&c.user,"username","","utilisateur");flag.StringVar(&c.pass,"password","","mot de passe");flag.StringVar(&c.auth,"auth","","PLAIN ou CRAM-MD5");flag.DurationVar(&c.timeout,"timeout",30*time.Second,"délai");flag.BoolVar(&c.verbose,"verbose",false,"journaliser");flag.Parse();if c.server==""||c.from==""||c.to==""{flag.Usage();os.Exit(2)};if c.pass==""{c.pass=os.Getenv("SMTP_PASSWORD")};r:=addresses(c.to);if len(r)==0{fmt.Fprintln(os.Stderr,"aucun destinataire");os.Exit(2)};if err:=send(c,r);err!=nil{fmt.Fprintln(os.Stderr,"erreur:",err);os.Exit(1)};fmt.Println("message envoyé")}
-func addresses(s string)[]string{var r []string;for _,x:=range strings.Split(s,","){if x=strings.TrimSpace(x);x!=""{r=append(r,x)}};return r}
-func send(c cfg,rs []string)error{h,_,e:=net.SplitHostPort(c.server);if e!=nil{h=c.server};var cl *smtp.Client;if c.tls{co,e:=tls.DialWithDialer(&net.Dialer{Timeout:c.timeout},"tcp",c.server,&tls.Config{ServerName:h,InsecureSkipVerify:c.insecure});if e!=nil{return e};cl,e=smtp.NewClient(co,h)}else{co,e:=(&net.Dialer{Timeout:c.timeout}).Dial("tcp",c.server);if e!=nil{return e};cl,e=smtp.NewClient(co,h)};if e!=nil{return e};defer cl.Close();if c.verbose{fmt.Println("connected",c.server)};if e=cl.Hello(c.helo);e!=nil{return e};if c.starttls&&!c.tls{ok,_:=cl.Extension("STARTTLS");if !ok{return fmt.Errorf("STARTTLS non annoncé")};if e=cl.StartTLS(&tls.Config{ServerName:h,InsecureSkipVerify:c.insecure});e!=nil{return e}};if c.user!=""{var a smtp.Auth;switch strings.ToUpper(c.auth){case "","PLAIN":a=smtp.PlainAuth("",c.user,c.pass,h);case "CRAM-MD5":a=smtp.CRAMMD5Auth(c.user,c.pass);default:return fmt.Errorf("authentification non supportée: %s",c.auth)};if e=cl.Auth(a);e!=nil{return e}};if e=cl.Mail(c.from);e!=nil{return e};for _,x:=range rs{if e=cl.Rcpt(x);e!=nil{return e}};w,e:=cl.Data();if e!=nil{return e};if _,e=w.Write([]byte(message(c)));e!=nil{w.Close();return e};if e=w.Close();e!=nil{return e};return cl.Quit()}
-func message(c cfg)string{a:=[]string{"Date: "+time.Now().Format(time.RFC1123Z),"From: "+c.from,"Subject: "+c.subject,"MIME-Version: 1.0","Content-Type: text/plain; charset=UTF-8"};for _,h:=range c.headers{if strings.Contains(h,":"){a=append(a,h)}};return strings.Join(a,"\r\n")+"\r\n\r\n"+strings.ReplaceAll(c.body,"\n","\r\n")+"\r\n"}
+import (
+	"crypto/tls"
+	"flag"
+	"fmt"
+	"io"
+	"net/smtp"
+	"os"
+	"strings"
+)
+
+func main() {
+	server := flag.String("server", "localhost:25", "SMTP server address")
+	from := flag.String("from", "sender@example.com", "Envelope sender")
+	to := flag.String("to", "recipient@example.com", "Envelope recipient(s), comma-separated")
+	subject := flag.String("subject", "SMTP test", "Message subject")
+	body := flag.String("body", "This is an SMTP test message.", "Message body")
+	username := flag.String("username", "", "SMTP username")
+	password := flag.String("password", "", "SMTP password")
+	startTLS := flag.Bool("starttls", false, "Use STARTTLS")
+	insecure := flag.Bool("insecure", false, "Skip TLS certificate verification")
+	flag.Parse()
+
+	recipients := splitAddresses(*to)
+	if len(recipients) == 0 {
+		fmt.Fprintln(os.Stderr, "at least one recipient is required")
+		os.Exit(2)
+	}
+
+	host, _, err := splitHostPort(*server)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+
+	var auth smtp.Auth
+	if *username != "" {
+		auth = smtp.PlainAuth("", *username, *password, host)
+	}
+
+	message := buildMessage(recipients, *subject, *body)
+	if err := sendMail(*server, host, *from, recipients, message, auth, *startTLS, *insecure); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func buildMessage(recipients []string, subject, body string) []byte {
+	return []byte("To: " + strings.Join(recipients, ", ") + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"\r\n" + body + "\r\n")
+}
+
+func sendMail(address, host, from string, recipients []string, message []byte, auth smtp.Auth, startTLS, insecure bool) error {
+	if !startTLS {
+		return smtp.SendMail(address, auth, from, recipients, message)
+	}
+
+	conn, err := smtp.Dial(address)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.StartTLS(&tls.Config{ServerName: host, InsecureSkipVerify: insecure}); err != nil {
+		return err
+	}
+	if auth != nil {
+		if err := conn.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err := conn.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range recipients {
+		if err := conn.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+	writer, err := conn.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(message); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	return conn.Quit()
+}
+
+func splitAddresses(value string) []string {
+	parts := strings.Split(value, ",")
+	addresses := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if address := strings.TrimSpace(part); address != "" {
+			addresses = append(addresses, address)
+		}
+	}
+	return addresses
+}
+
+func splitHostPort(address string) (string, string, error) {
+	host, port, ok := strings.Cut(address, ":")
+	if !ok || host == "" || port == "" {
+		return "", "", fmt.Errorf("invalid SMTP server address %q; expected host:port", address)
+	}
+	return host, port, nil
+}
+
+var _ io.Writer
