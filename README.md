@@ -1,64 +1,49 @@
 # smtp-testing-go
 
-Outil SMTP léger écrit en Go, inspiré de Swaks, sans dépendance externe.
+A lightweight SMTP testing tool written in Go, inspired by [Swaks](https://github.com/jetmore/swaks). It helps developers and operators test SMTP servers, authentication, TLS, recipients, and message delivery with minimal dependencies.
 
-## Fonctionnalités
+## Features
 
-- Connexion SMTP avec timeout configurable
-- `EHLO`/`HELO` personnalisé
-- TLS implicite et `STARTTLS`
-- Authentification `PLAIN` et `CRAM-MD5`
-- Expéditeur et plusieurs destinataires
-- En-têtes et corps de message personnalisés
-- Mode verbeux
-- Mot de passe via `SMTP_PASSWORD`
-- Binaires multi-plateformes publiés avec GoReleaser
+- Plain SMTP, STARTTLS, and implicit TLS
+- SMTP authentication with PLAIN and CRAM-MD5
+- Multiple recipients
+- Custom headers
+- Configurable timeout
+- Cross-platform binaries released with GoReleaser
 
 ## Installation
 
-Téléchargez un binaire depuis la page [Releases](https://github.com/vignemail1/smtp-testing-go/releases), ou compilez le projet :
+Download a binary from the [latest release](https://github.com/vignemail1/smtp-testing-go/releases), or build from source:
 
 ```sh
 go build -o smtp-testing-go .
 ```
 
-## Exemples
-
-Envoi simple :
+## Usage
 
 ```sh
-./smtp-testing-go -server smtp.example.com:25 \
+./smtp-testing-go \
+  -server smtp.example.com:587 \
   -from sender@example.com \
   -to recipient@example.com \
-  -subject "Test SMTP" \
-  -body "Message de test"
+  -subject "SMTP test" \
+  -body "This is a test message" \
+  -starttls
 ```
 
-Avec authentification et STARTTLS :
+For authentication, provide `-username` and `-password`. If `-password` is omitted, the program uses the `SMTP_PASSWORD` environment variable when it is set:
 
 ```sh
 SMTP_PASSWORD='secret' ./smtp-testing-go \
   -server smtp.example.com:587 \
   -from sender@example.com \
   -to recipient@example.com \
-  -username sender@example.com \
-  -auth plain \
-  -starttls \
-  -subject "Test" \
-  -body "Bonjour"
+  -username user@example.com \
+  -starttls
 ```
 
-Mode verbeux et plusieurs destinataires :
+Use `-help` to display all available options.
 
-```sh
-./smtp-testing-go -server localhost:2525 \
-  -from sender@example.com \
-  -to one@example.com,two@example.com \
-  -verbose
-```
+## License
 
-Consultez l'aide avec `-h` pour la liste complète des options.
-
-## Licence
-
-Ce projet est distribué sous licence MIT.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
