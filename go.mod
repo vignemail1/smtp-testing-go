@@ -1,3 +1,3 @@
 module github.com/vignemail1/smtp-testing-go
 
-go 1.22
+go 1.25
