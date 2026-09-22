@@ -1,0 +1,79 @@
+# .goreleaser.yaml — GoReleaser v2 configuration
+# https://goreleaser.com
+
+version: 2
+
+project_name: smtp-testing-go
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: smtp-testing-go
+    main: .
+    binary: smtp-testing-go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+      - openbsd
+      - netbsd
+      - dragonfly
+      - solaris
+    goarch:
+      - amd64
+      - arm64
+      - '386'
+      - arm
+      - riscv64
+      - ppc64le
+      - s390x
+    ignore:
+      - goos: windows
+        goarch: arm
+    flags:
+      - -trimpath
+      - -ldflags=-s -w
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+      - '^ci:'
+      - '^style:'
+      - '^refactor:'
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: 'v{{ .Version }}'
